@@ -1,0 +1,25 @@
+{
+  "name": "openrouter-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "openrouter-agent": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "serve": "bun run src/server.ts",
+    "build": "bun build --compile --minify ./src/cli.ts --outfile bin/openrouter-agent",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openrouter/agent": "^0.11.0",
+    "ajv": "^8.12.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.7.0"
+  }
+}
