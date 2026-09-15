@@ -68,6 +68,10 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
     return allTools;
   }
 
+  if (allowedTools.includes('none') || (allowedTools.length === 1 && allowedTools[0] === '')) {
+    return [];
+  }
+
   const hasShellAllowed = allowedTools.some(
     (pat) =>
       pat === 'Bash' ||
@@ -81,16 +85,7 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
       if (localName === 'shell') {
         return hasShellAllowed;
       }
-      return [
-        'file_read',
-        'file_write',
-        'file_edit',
-        'glob',
-        'list_dir',
-        'grep',
-        'openrouter_models',
-        'read_persisted_result',
-      ].includes(localName);
+      return allowedTools.includes(localName);
     }
 
     const serverType = (t as any).config?.type;
@@ -110,7 +105,11 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
         );
       }
       if (serverType === 'openrouter:datetime') {
-        return true;
+        return allowedTools.some(
+          (pat) =>
+            pat.toLowerCase() === 'datetime' ||
+            pat.toLowerCase() === 'openrouter:datetime'
+        );
       }
     }
 
