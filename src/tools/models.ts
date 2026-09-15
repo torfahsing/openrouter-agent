@@ -103,13 +103,28 @@ export const openrouterModelsTool = tool({
             (m.id && m.id.toLowerCase().includes(query)) ||
             (m.name && m.name.toLowerCase().includes(query)),
         );
+        models.sort((a, b) => {
+          const aId = (a.id || '').toLowerCase();
+          const bId = (b.id || '').toLowerCase();
+          if (aId === query && bId !== query) return -1;
+          if (aId !== query && bId === query) return 1;
+
+          const aStarts = aId.startsWith(query) || ((a.name || '').toLowerCase().startsWith(query));
+          const bStarts = bId.startsWith(query) || ((b.name || '').toLowerCase().startsWith(query));
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+
+          const aPrice = parseFloat(a.pricing?.prompt || '0');
+          const bPrice = parseFloat(b.pricing?.prompt || '0');
+          return aPrice - bPrice;
+        });
       }
 
       if (minContext && minContext > 0) {
         models = models.filter((m) => (m.context_length || 0) >= minContext);
       }
 
-      const simplified = models.slice(0, 30).map((m) => {
+      const simplified = models.slice(0, 100).map((m) => {
         const promptPer1M = (parseFloat(m.pricing?.prompt || '0') * 1_000_000).toFixed(4);
         const completionPer1M = (parseFloat(m.pricing?.completion || '0') * 1_000_000).toFixed(4);
         return {
