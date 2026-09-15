@@ -23,10 +23,9 @@ export const openrouterModelsTool = tool({
   inputSchema: z.object({
     category: z
       .enum(OPENROUTER_CATEGORIES)
-      .default('programming')
       .optional()
       .describe(
-        'Filter models by use case category: programming, roleplay, marketing, marketing/seo, technology, science, translation, legal, finance, health, trivia, academia. Default is "programming".',
+        'Optional leaderboard category filter (warning: OpenRouter caps category queries to top 20 models). Omit to search the full catalog.',
       ),
     onlyFree: z
       .boolean()
@@ -35,17 +34,41 @@ export const openrouterModelsTool = tool({
     search: z
       .string()
       .optional()
-      .describe('Filter model ID or name by keyword (e.g. "deepseek", "claude", "free").'),
+      .describe('Filter model ID or name by keyword (e.g. "deepseek", "claude", "qwen", "free").'),
     minContext: z
       .number()
       .optional()
       .describe('Filter by minimum context window size (e.g. 64000).'),
+    toolsOnly: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Filter for models supporting tool calling (supported_parameters=tools). Default is true.'),
+    sort: z
+      .enum([
+        'pricing-low-to-high',
+        'pricing-high-to-low',
+        'context-high-to-low',
+        'throughput-high-to-low',
+        'latency-low-to-high',
+        'most-popular',
+        'newest',
+      ])
+      .optional()
+      .default('pricing-low-to-high')
+      .describe('Server-side sort order. Default is "pricing-low-to-high".'),
   }),
-  execute: async ({ category = 'programming', onlyFree, search, minContext }) => {
+  execute: async ({ category, onlyFree, search, minContext, toolsOnly = true, sort = 'pricing-low-to-high' }) => {
     try {
       const url = new URL('https://openrouter.ai/api/v1/models');
       if (category) {
         url.searchParams.set('category', category);
+      }
+      if (toolsOnly) {
+        url.searchParams.set('supported_parameters', 'tools');
+      }
+      if (sort) {
+        url.searchParams.set('sort', sort);
       }
 
       const headers: Record<string, string> = {};
