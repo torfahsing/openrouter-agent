@@ -55,13 +55,58 @@ import { compactMessages } from './compaction.js';
 
 export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string; [key: string]: unknown };
 
+export interface DoneUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
+  /** Exact USD cost reported by the upstream API/provider, when available. */
+  cost?: number | null;
+  costDetails?: {
+    upstreamInferenceCost?: number | null | undefined;
+    upstreamInferenceInputCost?: number;
+    upstreamInferenceOutputCost?: number;
+  };
+}
+
+/**
+ * Normalize raw usage data (either the SDK `SessionUsageTotals` from
+ * `getUsage()` or the final response's `Usage`) to the stable `DoneUsage`
+ * shape emitted on the `done` NDJSON event. Unknown extra fields (such as
+ * `modelCalls`) are intentionally dropped, and `cost` is preserved only when
+ * the upstream reported an actual numeric value.
+ */
+export function normalizeUsage(raw: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
+  cost?: number | null | undefined;
+  costDetails?: DoneUsage['costDetails'];
+  [key: string]: unknown;
+} | null | undefined): DoneUsage | null {
+  if (!raw) return null;
+  const usage: DoneUsage = {
+    ...(raw.inputTokens !== undefined ? { inputTokens: raw.inputTokens } : {}),
+    ...(raw.outputTokens !== undefined ? { outputTokens: raw.outputTokens } : {}),
+    ...(raw.totalTokens !== undefined ? { totalTokens: raw.totalTokens } : {}),
+    ...(raw.cachedTokens !== undefined ? { cachedTokens: raw.cachedTokens } : {}),
+    ...(raw.reasoningTokens !== undefined ? { reasoningTokens: raw.reasoningTokens } : {}),
+    ...(typeof raw.cost === 'number' ? { cost: raw.cost } : {}),
+    ...(raw.costDetails ? { costDetails: raw.costDetails } : {}),
+  };
+  return usage;
+}
+
 export type AgentEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; name: string; callId: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; callId: string; output: string }
   | { type: 'reasoning'; delta: string }
   | { type: 'turn_end' }
-  | { type: 'done'; usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null | undefined; durationMs: number };
+  | { type: 'done'; usage: DoneUsage | null | undefined; durationMs: number };
 
 function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   if (!allowedTools) {
@@ -227,17 +272,31 @@ export async function runAgent(
     const response = await result.getResponse();
     const durationMs = Date.now() - startedAt;
     const text = accumulatedText || (response.outputText ?? '');
-    
+
+    // Aggregate usage across EVERY model call this run made (each tool-round
+    // follow-up is billed separately and the final round alone omits them).
+    // `getUsage()` never rejects, but guard anyway so a telemetry failure can
+    // never mask a completed run — fall back to the final response's usage.
+    let sessionUsage: DoneUsage | null = normalizeUsage(response.usage);
+    try {
+      const totals = await result.getUsage();
+      if (totals && (totals.inputTokens !== undefined || totals.outputTokens !== undefined || typeof totals.cost === 'number')) {
+        sessionUsage = normalizeUsage(totals);
+      }
+    } catch {
+      // keep response.usage as fallback
+    }
+
     // Log execution termination to stderr
     process.stderr.write(JSON.stringify({
       type: 'agent_end',
       timestamp: new Date().toISOString(),
       durationMs,
-      usage: response.usage,
+      usage: sessionUsage,
     }) + '\n');
 
-    options?.onEvent?.({ type: 'done', usage: response.usage, durationMs });
-    return { text, usage: response.usage, output: response.output, durationMs };
+    options?.onEvent?.({ type: 'done', usage: sessionUsage, durationMs });
+    return { text, usage: sessionUsage, output: response.output, durationMs };
   } catch (err: any) {
     process.stderr.write(JSON.stringify({
       type: 'error',

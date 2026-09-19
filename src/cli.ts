@@ -5,6 +5,7 @@ import { loadConfig, type AgentConfig } from './config.js';
 import { runAgentWithRetry, type AgentEvent } from './agent.js';
 import { initSessionDir, saveMessage, newSessionPath, loadSession } from './session.js';
 import { runtimeContext } from './runtime-context.js';
+import { OPENROUTER_AGENT_CAPABILITIES } from './capabilities.js';
 
 // Helper to read piped stdin input in Node.js
 async function getStdinText(): Promise<string> {
@@ -77,6 +78,7 @@ try {
       'output-schema':   { type: 'string' },
       allowedTools:      { type: 'string',  multiple: true },
       'permission-mode': { type: 'string' },
+      capabilities:      { type: 'boolean', default: false },
       help:              { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -86,6 +88,11 @@ try {
   positionals = parsed.positionals;
 } catch (err) {
   reportError(err);
+}
+
+if (values.capabilities) {
+  process.stdout.write(JSON.stringify(OPENROUTER_AGENT_CAPABILITIES, null, 2) + '\n');
+  process.exit(0);
 }
 
 if (values.help) {
@@ -100,6 +107,7 @@ Options:
       --max-steps <n>       Maximum number of agent steps
       --max-cost <n>        Maximum cost in dollars
       --output-schema <f>   Path to a JSON Schema file to validate output
+      --capabilities        Output agent capabilities manifest and exit
   -h, --help                Show this help message
 
 Prompt sources (in priority order):
