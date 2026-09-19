@@ -12,6 +12,12 @@ export interface AgentCategoryCapability {
   default: boolean;
 }
 
+export interface AgentFeatures {
+  models?: boolean;
+  quota?: boolean;
+  streaming?: boolean;
+}
+
 export interface AgentCapabilities {
   name: string;
   version: string;
@@ -20,6 +26,7 @@ export interface AgentCapabilities {
   tools: AgentToolCapability[];
   categories: AgentCategoryCapability[];
   supportedModels?: string[];
+  features?: AgentFeatures;
 }
 
 export const OPENROUTER_AGENT_CAPABILITIES: AgentCapabilities = {
@@ -115,4 +122,8 @@ export const OPENROUTER_AGENT_CAPABILITIES: AgentCapabilities = {
     { id: 'metadata', name: 'Metadata & Helpers', default: true },
   ],
   supportedModels: [],
+  features: {
+    models: true,
+    quota: false,
+  },
 };

@@ -80,6 +80,7 @@ try {
       'permission-mode': { type: 'string' },
       capabilities:      { type: 'boolean', default: false },
       models:            { type: 'boolean', default: false },
+      quota:             { type: 'boolean', default: false },
       help:              { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -93,6 +94,11 @@ try {
 
 if (values.capabilities) {
   process.stdout.write(JSON.stringify(OPENROUTER_AGENT_CAPABILITIES, null, 2) + '\n');
+  process.exit(0);
+}
+
+if (values.quota) {
+  process.stdout.write(JSON.stringify({ models: [], supported: false }, null, 2) + '\n');
   process.exit(0);
 }
 
@@ -145,6 +151,8 @@ Options:
       --max-cost <n>        Maximum cost in dollars
       --output-schema <f>   Path to a JSON Schema file to validate output
       --capabilities        Output agent capabilities manifest and exit
+      --models              Output available models and exit
+      --quota               Output quota/usage remaining and exit
   -h, --help                Show this help message
 
 Prompt sources (in priority order):
