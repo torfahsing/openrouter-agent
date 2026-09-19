@@ -79,6 +79,7 @@ try {
       allowedTools:      { type: 'string',  multiple: true },
       'permission-mode': { type: 'string' },
       capabilities:      { type: 'boolean', default: false },
+      models:            { type: 'boolean', default: false },
       help:              { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -93,6 +94,42 @@ try {
 if (values.capabilities) {
   process.stdout.write(JSON.stringify(OPENROUTER_AGENT_CAPABILITIES, null, 2) + '\n');
   process.exit(0);
+}
+
+if (values.models) {
+  try {
+    const url = new URL('https://openrouter.ai/api/v1/models?supported_parameters=tools&sort=pricing-low-to-high');
+    const headers: Record<string, string> = {};
+    if (process.env.OPENROUTER_API_KEY) {
+      headers.Authorization = `Bearer ${process.env.OPENROUTER_API_KEY}`;
+    }
+    const res = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) {
+      throw new Error(`OpenRouter API responded with status ${res.status}`);
+    }
+    const json = (await res.json()) as { data?: any[] };
+    const rawModels = Array.isArray(json?.data) ? json.data : [];
+    const formatted = rawModels.map((m) => {
+      const promptCost = parseFloat(m.pricing?.prompt || '0') * 1_000_000;
+      const completionCost = parseFloat(m.pricing?.completion || '0') * 1_000_000;
+      return {
+        id: m.id,
+        model_id: m.id,
+        name: m.name || m.id,
+        context_length: m.context_length || 0,
+        prompt_cost_per_1m: promptCost,
+        completion_cost_per_1m: completionCost,
+        is_free: promptCost === 0 && completionCost === 0,
+        description: (m.description || '').slice(0, 500),
+        category: 'programming',
+      };
+    });
+    process.stdout.write(JSON.stringify(formatted, null, 2) + '\n');
+    process.exit(0);
+  } catch (err: any) {
+    process.stderr.write(`Failed to fetch models: ${err?.message || err}\n`);
+    process.exit(1);
+  }
 }
 
 if (values.help) {
