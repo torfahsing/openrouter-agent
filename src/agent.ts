@@ -127,8 +127,11 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
-      if (localName === 'shell') {
+      if (localName === 'shell' || localName === 'bash' || localName === 'run_command') {
         return hasShellAllowed;
+      }
+      if (localName === 'read' || localName === 'view_file') {
+        return allowedTools.includes('file_read') || allowedTools.includes('read');
       }
       return allowedTools.includes(localName);
     }
@@ -186,9 +189,17 @@ export async function runAgent(
     })) as ChatMessage[];
   }
 
-  const instructions = config.systemPrompt.replace('{cwd}', process.cwd());
-
   const filteredTools = filterTools(tools, config.allowedTools);
+
+  const primaryToolNames = Array.from(new Set(
+    filteredTools
+      .map((t: any) => t.function?.name ?? t.config?.type)
+      .filter((n: string) => n && !['read', 'view_file', 'bash', 'run_command'].includes(n))
+  ));
+  const toolHint = primaryToolNames.length > 0
+    ? `\n\nAvailable tools: ${primaryToolNames.join(', ')}`
+    : '';
+  const instructions = config.systemPrompt.replace('{cwd}', process.cwd()) + toolHint;
 
   const result = client.callModel({
     model: config.model,
@@ -206,6 +217,7 @@ export async function runAgent(
 
   try {
     const callNames = new Map<string, string>();
+    const executedCallIds = new Set<string>();
 
     const streamText = async () => {
       for await (const delta of result.getTextStream()) {
@@ -239,6 +251,7 @@ export async function runAgent(
             options?.onEvent?.({ type: 'tool_call', name: item.name, callId: item.callId, args });
           }
         } else if (item.type === 'function_call_output') {
+          executedCallIds.add(item.callId);
           const out = typeof item.output === 'string' ? item.output : JSON.stringify(item.output);
           const preview = out.length > 200 ? out.slice(0, 200) + '...' : out;
           
@@ -268,6 +281,12 @@ export async function runAgent(
     };
 
     await Promise.all([streamText(), streamToolsAndReasoning()]);
+
+    const unexecuted = Array.from(callNames.entries()).filter(([callId]) => !executedCallIds.has(callId));
+    if (unexecuted.length > 0) {
+      const names = unexecuted.map(([_, name]) => name).join(', ');
+      throw new Error(`Agent execution halted prematurely with unexecuted tool call(s): ${names}`);
+    }
 
     const response = await result.getResponse();
     const durationMs = Date.now() - startedAt;

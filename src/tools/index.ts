@@ -1,11 +1,11 @@
 import { serverTool } from '@openrouter/agent';
-import { fileReadTool } from './file-read.js';
+import { fileReadTool, readTool, viewFileTool } from './file-read.js';
 import { fileWriteTool } from './file-write.js';
 import { fileEditTool } from './file-edit.js';
 import { globTool } from './glob.js';
 import { grepTool } from './grep.js';
 import { listDirTool } from './list-dir.js';
-import { shellTool } from './shell.js';
+import { shellTool, bashTool, runCommandTool } from './shell.js';
 import { OFFLOAD_DEFAULTS } from '../tool-offload.js';
 import { createReadPersistedResultTool } from './read-persisted-result.js';
 import { openrouterModelsTool } from './models.js';
@@ -13,12 +13,16 @@ import { openrouterModelsTool } from './models.js';
 export const tools = [
   // User-defined local tools (executed client-side)
   fileReadTool,
+  readTool,
+  viewFileTool,
   fileWriteTool,
   fileEditTool,
   globTool,
   listDirTool,
   grepTool,
   shellTool,
+  bashTool,
+  runCommandTool,
   openrouterModelsTool,
   createReadPersistedResultTool(OFFLOAD_DEFAULTS.storageDir),
 

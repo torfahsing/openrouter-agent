@@ -6,19 +6,21 @@ import { extname } from 'node:path';
 const DEFAULT_LINE_LIMIT = 2000;
 const MAX_LINE_CHARS = 2000;
 
-export const fileReadTool = tool({
-  name: 'file_read',
-  description:
-    'Read the contents of a file. Output is capped at 2000 lines by default (use offset/limit to paginate) and any line longer than 2000 characters is truncated. When the response is truncated, the hint field tells you how to continue.',
-  inputSchema: z.object({
-    path: z.string().describe('Absolute path to the file'),
-    offset: z.number().optional().describe('Start reading from this line (1-indexed)'),
-    limit: z.number().optional().describe(`Maximum lines to return (default ${DEFAULT_LINE_LIMIT})`),
-  }),
-  execute: async ({ path, offset = 1, limit = DEFAULT_LINE_LIMIT }) => {
-    if (!existsSync(path)) {
-      return { error: `File not found: ${path}` };
-    }
+export const fileReadSchema = z.object({
+  path: z.string().optional().describe('Absolute path to the file'),
+  file_path: z.string().optional().describe('Alias for path'),
+  offset: z.number().optional().describe('Start reading from this line (1-indexed)'),
+  limit: z.number().optional().describe(`Maximum lines to return (default ${DEFAULT_LINE_LIMIT})`),
+});
+
+export const executeFileRead = async ({ path, file_path, offset = 1, limit = DEFAULT_LINE_LIMIT }: { path?: string; file_path?: string; offset?: number; limit?: number }) => {
+  const targetPath = path || file_path;
+  if (!targetPath) {
+    return { error: 'path is required' };
+  }
+  if (!existsSync(targetPath)) {
+    return { error: `File not found: ${targetPath}` };
+  }
 
     // Image detection
     const ext = extname(path).toLowerCase();
@@ -67,5 +69,27 @@ export const fileReadTool = tool({
     } catch (err: any) {
       return { error: err.message };
     }
-  },
+  };
+
+export const fileReadTool = tool({
+  name: 'file_read',
+  description:
+    'Read the contents of a file. Output is capped at 2000 lines by default (use offset/limit to paginate) and any line longer than 2000 characters is truncated. When the response is truncated, the hint field tells you how to continue.',
+  inputSchema: fileReadSchema,
+  execute: executeFileRead,
 });
+
+export const readTool = tool({
+  name: 'read',
+  description: 'Read the contents of a file (alias for file_read)',
+  inputSchema: fileReadSchema,
+  execute: executeFileRead,
+});
+
+export const viewFileTool = tool({
+  name: 'view_file',
+  description: 'Read the contents of a file (alias for file_read)',
+  inputSchema: fileReadSchema,
+  execute: executeFileRead,
+});
+
