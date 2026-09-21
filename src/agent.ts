@@ -5,6 +5,8 @@ import type { AgentConfig } from './config.js';
 import { tools } from './tools/index.js';
 import { compactMessages } from './compaction.js';
 
+import { extractOpenRouterErrorMessage } from './error.js';
+
 // Monkeypatch ModelResult.prototype.pipeAndConsumeStream to provide detailed API error messages
 (ModelResult.prototype as any).pipeAndConsumeStream = async function (stream: any, turnNumber: number) {
   const broadcaster = (this as any).turnBroadcaster;
@@ -25,7 +27,7 @@ import { compactMessages } from './compaction.js';
       let errorMsg = 'Response failed';
       let statusCode: number | undefined;
       if (apiError) {
-        errorMsg = `Response failed: [${apiError.code}] ${apiError.message}`;
+        errorMsg = extractOpenRouterErrorMessage({ error: apiError });
         if (typeof apiError.code === 'number') {
           statusCode = apiError.code;
         } else if (typeof apiError.code === 'string' && /^\d+$/.test(apiError.code)) {
@@ -36,6 +38,7 @@ import { compactMessages } from './compaction.js';
       }
       const err: any = new Error(errorMsg);
       if (statusCode) err.status = statusCode;
+      err.error = apiError;
       throw err;
     }
     if (event.type === 'response.incomplete') {
@@ -317,12 +320,20 @@ export async function runAgent(
     options?.onEvent?.({ type: 'done', usage: sessionUsage, durationMs });
     return { text, usage: sessionUsage, output: response.output, durationMs };
   } catch (err: any) {
+    const formattedMessage = extractOpenRouterErrorMessage(err);
+    const enrichedErr = new Error(formattedMessage);
+    enrichedErr.name = err.name || 'OpenRouterError';
+    (enrichedErr as any).status = err?.status ?? err?.statusCode ?? err?.error?.code;
+    (enrichedErr as any).statusCode = (enrichedErr as any).status;
+    (enrichedErr as any).error = err.error ?? err.data$?.error;
+    (enrichedErr as any).raw = err;
+
     process.stderr.write(JSON.stringify({
       type: 'error',
       timestamp: new Date().toISOString(),
-      message: err.message,
+      message: formattedMessage,
     }) + '\n');
-    throw err;
+    throw enrichedErr;
   } finally {
     options?.signal?.removeEventListener('abort', onAbort);
   }
@@ -351,7 +362,7 @@ export async function runAgentWithRetry(
     } catch (err: any) {
       const s = err?.status ?? err?.statusCode;
       const msg = err?.message ? String(err.message) : '';
-      const isTransientMsg = /Provider returned error|rate limit|overloaded|timeout|502|503|504|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg);
+      const isTransientMsg = /Provider returned error|rate limit|rate-limited|overloaded|timeout|502|503|504|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg);
       const retryable = s === 429 || (s >= 500 && s < 600) || isTransientMsg;
       if (!retryable || attempt === max || mutatingToolCallsMade > 0) throw err;
       

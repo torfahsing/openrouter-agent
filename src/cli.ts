@@ -6,6 +6,7 @@ import { runAgentWithRetry, type AgentEvent } from './agent.js';
 import { initSessionDir, saveMessage, newSessionPath, loadSession } from './session.js';
 import { runtimeContext } from './runtime-context.js';
 import { OPENROUTER_AGENT_CAPABILITIES } from './capabilities.js';
+import { extractOpenRouterErrorMessage } from './error.js';
 
 // Helper to read piped stdin input in Node.js
 async function getStdinText(): Promise<string> {
@@ -52,7 +53,7 @@ const preMode: 'text' | 'json' | 'quiet' =
   argv.includes('--quiet') || argv.includes('-q') ? 'quiet' : 'text';
 
 function reportError(err: any): never {
-  const message = err?.message ?? String(err);
+  const message = extractOpenRouterErrorMessage(err);
   if (preMode === 'json') {
     process.stdout.write(JSON.stringify({ type: 'error', message }) + '\n');
   } else if (preMode !== 'quiet') {
@@ -300,11 +301,14 @@ try {
 
   process.exit(0);
 } catch (err: any) {
-  if (!values.quiet) {
-    if (values.json) {
-      process.stdout.write(JSON.stringify({ type: 'error', message: err.message }) + '\n');
+  const message = extractOpenRouterErrorMessage(err);
+  const isQuiet = values?.quiet ?? (preMode === 'quiet');
+  const isJson = values?.json ?? (preMode === 'json');
+  if (!isQuiet) {
+    if (isJson) {
+      process.stdout.write(JSON.stringify({ type: 'error', message }) + '\n');
     } else {
-      console.error(`Error: ${err.message}`);
+      console.error(`Error: ${message}`);
     }
   }
   process.exit(1);
