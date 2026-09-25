@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadConfig, type AgentConfig } from './config.js';
 import { runAgentWithRetry, type AgentEvent } from './agent.js';
 import { initSessionDir, saveMessage, newSessionPath, loadSession } from './session.js';
@@ -226,11 +227,15 @@ if (values['output-schema']) {
 let sessionPath: string | undefined;
 let inputPayload: string | any[] = prompt;
 
-if (typeof values.session === 'string') {
-  sessionPath = values.session;
+if (typeof values.session === 'string' && !values['no-session']) {
+  initSessionDir(config.sessionDir);
+  const sessionArg = values.session;
+  sessionPath = sessionArg.includes('/') || sessionArg.includes('\\') || sessionArg.endsWith('.jsonl')
+    ? sessionArg
+    : join(config.sessionDir, `${sessionArg.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsonl`);
   const history = await loadSession(sessionPath);
   if (history.length > 0) {
-    inputPayload = history;
+    inputPayload = [...history, { role: 'user', content: prompt }];
   }
   if (prompt) {
     saveMessage(sessionPath, { role: 'user', content: prompt });
