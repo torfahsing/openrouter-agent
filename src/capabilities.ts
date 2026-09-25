@@ -16,6 +16,7 @@ export interface AgentFeatures {
   models?: boolean;
   quota?: boolean;
   streaming?: boolean;
+  sessions?: boolean;
 }
 
 export interface AgentCapabilities {
@@ -125,5 +126,6 @@ export const OPENROUTER_AGENT_CAPABILITIES: AgentCapabilities = {
   features: {
     models: true,
     quota: false,
+    sessions: true,
   },
 };
