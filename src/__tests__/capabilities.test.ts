@@ -9,6 +9,7 @@ describe('openrouter-agent capabilities', () => {
     expect(Array.isArray(OPENROUTER_AGENT_CAPABILITIES.categories)).toBe(true);
     expect(OPENROUTER_AGENT_CAPABILITIES.features?.models).toBe(true);
     expect(OPENROUTER_AGENT_CAPABILITIES.features?.quota).toBe(false);
+    expect(OPENROUTER_AGENT_CAPABILITIES.features?.outputSchema).toBe(true);
   });
 
   it('declares readOnly property on every tool', () => {

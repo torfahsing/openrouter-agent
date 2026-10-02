@@ -21,6 +21,7 @@ export interface AgentConfig {
   outputMode: 'text' | 'json' | 'quiet';
   allowedTools?: string[];
   permissionMode?: string;
+  outputSchema?: Record<string, unknown>;
 }
 
 const DEFAULTS: AgentConfig = {

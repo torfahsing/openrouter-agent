@@ -218,15 +218,30 @@ export async function runAgent(
   const toolHint = primaryToolNames.length > 0
     ? `\n\nAvailable tools: ${primaryToolNames.join(', ')}`
     : '';
-  const instructions = config.systemPrompt.replace('{cwd}', process.cwd()) + toolHint;
+  const schemaHint = config.outputSchema
+    ? `\n\nImportant: Your final answer MUST strictly conform to this JSON schema:\n${JSON.stringify(config.outputSchema, null, 2)}\nReturn ONLY the bare JSON object conforming to the schema.`
+    : '';
+  const instructions = config.systemPrompt.replace('{cwd}', process.cwd()) + toolHint + schemaHint;
 
-  const result = client.callModel({
+  const callModelParams: any = {
     model: config.model,
     instructions,
     input: activeInput as string | Item[],
     tools: filteredTools as any,
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
-  });
+  };
+  if (config.outputSchema) {
+    callModelParams.text = {
+      format: {
+        type: 'json_schema',
+        name: 'output_schema',
+        schema: config.outputSchema,
+        strict: true,
+      },
+    };
+  }
+
+  const result = client.callModel(callModelParams);
 
   const onAbort = () => result.cancel();
   options?.signal?.addEventListener('abort', onAbort);

@@ -182,10 +182,22 @@ if (!prompt) {
   process.exit(1);
 }
 
+let outputSchema: Record<string, unknown> | undefined;
+if (values['output-schema']) {
+  try {
+    const raw = readFileSync(values['output-schema'], 'utf-8');
+    outputSchema = JSON.parse(raw);
+  } catch (err: any) {
+    console.error(`Error: could not load output schema: ${err.message}`);
+    process.exit(1);
+  }
+}
+
 const overrides: Partial<AgentConfig> = {};
 if (values.model) overrides.model = values.model;
 if (values.allowedTools) overrides.allowedTools = values.allowedTools;
 if (values['permission-mode']) overrides.permissionMode = values['permission-mode'];
+if (outputSchema) overrides.outputSchema = outputSchema;
 
 const config = loadConfig(
   overrides,
@@ -211,17 +223,6 @@ if (values['max-cost']) {
     throw new Error(`--max-cost must be a positive number, got: ${values['max-cost']}`);
   }
   config.maxCost = n;
-}
-
-let outputSchema: Record<string, unknown> | undefined;
-if (values['output-schema']) {
-  try {
-    const raw = readFileSync(values['output-schema'], 'utf-8');
-    outputSchema = JSON.parse(raw);
-  } catch (err: any) {
-    console.error(`Error: could not load output schema: ${err.message}`);
-    process.exit(1);
-  }
 }
 
 let sessionPath: string | undefined;
