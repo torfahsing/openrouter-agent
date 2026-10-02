@@ -23,10 +23,10 @@ export const executeFileRead = async ({ path, file_path, offset = 1, limit = DEF
   }
 
     // Image detection
-    const ext = extname(path).toLowerCase();
+    const ext = extname(targetPath).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) {
       try {
-        const buf = readFileSync(path);
+        const buf = readFileSync(targetPath);
         const data = buf.toString('base64');
         const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : `image/${ext.slice(1)}`;
         return { type: 'image', data, mimeType };
@@ -36,7 +36,7 @@ export const executeFileRead = async ({ path, file_path, offset = 1, limit = DEF
     }
 
     try {
-      const content = readFileSync(path, 'utf-8');
+      const content = readFileSync(targetPath, 'utf-8');
       const lines = content.split('\n');
       const start = offset - 1;
       const end = Math.min(start + limit, lines.length);
@@ -75,6 +75,13 @@ export const fileReadTool = tool({
   name: 'file_read',
   description:
     'Read the contents of a file. Output is capped at 2000 lines by default (use offset/limit to paginate) and any line longer than 2000 characters is truncated. When the response is truncated, the hint field tells you how to continue.',
+  inputSchema: fileReadSchema,
+  execute: executeFileRead,
+});
+
+export const readFileTool = tool({
+  name: 'read_file',
+  description: 'Read the contents of a file (alias for file_read)',
   inputSchema: fileReadSchema,
   execute: executeFileRead,
 });

@@ -130,11 +130,20 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
-      if (localName === 'shell' || localName === 'bash' || localName === 'run_command') {
+      if (['shell', 'bash', 'run_command'].includes(localName)) {
         return hasShellAllowed;
       }
-      if (localName === 'read' || localName === 'view_file') {
-        return allowedTools.includes('file_read') || allowedTools.includes('read');
+      if (['file_read', 'read_file', 'read', 'view_file'].includes(localName)) {
+        return allowedTools.includes('file_read') || allowedTools.includes('read_file') || allowedTools.includes('read');
+      }
+      if (['file_write', 'write_file', 'write'].includes(localName)) {
+        return allowedTools.includes('file_write') || allowedTools.includes('write_file') || allowedTools.includes('write');
+      }
+      if (['file_edit', 'edit_file', 'edit'].includes(localName)) {
+        return allowedTools.includes('file_edit') || allowedTools.includes('edit_file') || allowedTools.includes('edit');
+      }
+      if (['list_dir', 'list_files', 'ls'].includes(localName)) {
+        return allowedTools.includes('list_dir') || allowedTools.includes('list_files') || allowedTools.includes('ls');
       }
       return allowedTools.includes(localName);
     }
@@ -194,10 +203,17 @@ export async function runAgent(
 
   const filteredTools = filterTools(tools, config.allowedTools);
 
+  const aliasNames = [
+    'read', 'read_file', 'view_file',
+    'write', 'write_file',
+    'edit', 'edit_file',
+    'ls', 'list_files',
+    'bash', 'run_command',
+  ];
   const primaryToolNames = Array.from(new Set(
     filteredTools
       .map((t: any) => t.function?.name ?? t.config?.type)
-      .filter((n: string) => n && !['read', 'view_file', 'bash', 'run_command'].includes(n))
+      .filter((n: string) => n && !aliasNames.includes(n))
   ));
   const toolHint = primaryToolNames.length > 0
     ? `\n\nAvailable tools: ${primaryToolNames.join(', ')}`
