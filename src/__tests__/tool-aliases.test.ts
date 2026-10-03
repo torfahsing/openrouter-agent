@@ -38,3 +38,27 @@ describe('tool aliases', () => {
     expect(names).toContain('run_command');
   });
 });
+
+describe('filterTools', () => {
+  it('preserves read_persisted_result whenever tools are active', async () => {
+    const { filterTools } = await import('../agent.js');
+    const filtered = filterTools(tools, ['file_read']);
+    const names = filtered.map((t: any) => t.function?.name ?? t.config?.type);
+    expect(names).toContain('file_read');
+    expect(names).toContain('read_persisted_result');
+  });
+
+  it('excludes all tools when allowedTools is none', async () => {
+    const { filterTools } = await import('../agent.js');
+    const filtered = filterTools(tools, ['none']);
+    expect(filtered).toEqual([]);
+  });
+
+  it('preserves read_persisted_result with shell wildcard filter', async () => {
+    const { filterTools } = await import('../agent.js');
+    const filtered = filterTools(tools, ['shell(git *)']);
+    const names = filtered.map((t: any) => t.function?.name ?? t.config?.type);
+    expect(names).toContain('shell');
+    expect(names).toContain('read_persisted_result');
+  });
+});

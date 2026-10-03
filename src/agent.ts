@@ -111,7 +111,7 @@ export type AgentEvent =
   | { type: 'turn_end' }
   | { type: 'done'; usage: DoneUsage | null | undefined; durationMs: number };
 
-function filterTools(allTools: typeof tools, allowedTools?: string[]) {
+export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   if (!allowedTools) {
     return allTools;
   }
@@ -130,6 +130,9 @@ function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
+      if (localName === 'read_persisted_result') {
+        return true;
+      }
       if (['shell', 'bash', 'run_command'].includes(localName)) {
         return hasShellAllowed;
       }
