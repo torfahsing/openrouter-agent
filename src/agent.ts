@@ -127,10 +127,16 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
       /^(?:Bash|shell)\(.*\)$/i.test(pat)
   );
 
+  const AGENT_INTERNAL_TOOLS = new Set([
+    'read_persisted_result',
+    'openrouter_models',
+    'datetime',
+  ]);
+
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
-      if (localName === 'read_persisted_result') {
+      if (AGENT_INTERNAL_TOOLS.has(localName)) {
         return true;
       }
       if (['shell', 'bash', 'run_command'].includes(localName)) {
@@ -153,6 +159,9 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
 
     const serverType = (t as any).config?.type;
     if (serverType) {
+      if (serverType === 'openrouter:datetime') {
+        return true;
+      }
       if (serverType === 'openrouter:web_search') {
         return allowedTools.some(
           (pat) =>
@@ -165,13 +174,6 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
           (pat) =>
             pat.toLowerCase() === 'webfetch' ||
             pat.toLowerCase() === 'openrouter:web_fetch'
-        );
-      }
-      if (serverType === 'openrouter:datetime') {
-        return allowedTools.some(
-          (pat) =>
-            pat.toLowerCase() === 'datetime' ||
-            pat.toLowerCase() === 'openrouter:datetime'
         );
       }
     }
