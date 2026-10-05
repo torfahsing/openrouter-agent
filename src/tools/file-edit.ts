@@ -56,17 +56,3 @@ export const fileEditTool = tool({
   inputSchema: fileEditSchema,
   execute: executeFileEdit,
 });
-
-export const editFileTool = tool({
-  name: 'edit_file',
-  description: 'Apply search-and-replace edits to a file (alias for file_edit)',
-  inputSchema: fileEditSchema,
-  execute: executeFileEdit,
-});
-
-export const editTool = tool({
-  name: 'edit',
-  description: 'Apply search-and-replace edits to a file (alias for file_edit)',
-  inputSchema: fileEditSchema,
-  execute: executeFileEdit,
-});

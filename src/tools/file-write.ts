@@ -30,17 +30,3 @@ export const fileWriteTool = tool({
   inputSchema: fileWriteSchema,
   execute: executeFileWrite,
 });
-
-export const writeFileTool = tool({
-  name: 'write_file',
-  description: 'Write content to a file (alias for file_write)',
-  inputSchema: fileWriteSchema,
-  execute: executeFileWrite,
-});
-
-export const writeTool = tool({
-  name: 'write',
-  description: 'Write content to a file (alias for file_write)',
-  inputSchema: fileWriteSchema,
-  execute: executeFileWrite,
-});

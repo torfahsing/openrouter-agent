@@ -127,32 +127,14 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
       /^(?:Bash|shell)\(.*\)$/i.test(pat)
   );
 
-  const AGENT_INTERNAL_TOOLS = new Set([
-    'read_persisted_result',
-    'openrouter_models',
-    'datetime',
-  ]);
-
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
-      if (AGENT_INTERNAL_TOOLS.has(localName)) {
-        return true;
-      }
-      if (['shell', 'bash', 'run_command'].includes(localName)) {
+      if (localName === 'shell') {
         return hasShellAllowed;
       }
-      if (['file_read', 'read_file', 'read', 'view_file'].includes(localName)) {
-        return allowedTools.includes('file_read') || allowedTools.includes('read_file') || allowedTools.includes('read');
-      }
-      if (['file_write', 'write_file', 'write'].includes(localName)) {
-        return allowedTools.includes('file_write') || allowedTools.includes('write_file') || allowedTools.includes('write');
-      }
-      if (['file_edit', 'edit_file', 'edit'].includes(localName)) {
-        return allowedTools.includes('file_edit') || allowedTools.includes('edit_file') || allowedTools.includes('edit');
-      }
-      if (['list_dir', 'list_files', 'ls'].includes(localName)) {
-        return allowedTools.includes('list_dir') || allowedTools.includes('list_files') || allowedTools.includes('ls');
+      if (localName === 'read_persisted_result') {
+        return true;
       }
       return allowedTools.includes(localName);
     }
@@ -160,12 +142,17 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
     const serverType = (t as any).config?.type;
     if (serverType) {
       if (serverType === 'openrouter:datetime') {
-        return true;
+        return allowedTools.some(
+          (pat) =>
+            pat.toLowerCase() === 'datetime' ||
+            pat.toLowerCase() === 'openrouter:datetime'
+        );
       }
       if (serverType === 'openrouter:web_search') {
         return allowedTools.some(
           (pat) =>
             pat.toLowerCase() === 'websearch' ||
+            pat.toLowerCase() === 'web_search' ||
             pat.toLowerCase() === 'openrouter:web_search'
         );
       }
@@ -173,6 +160,7 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
         return allowedTools.some(
           (pat) =>
             pat.toLowerCase() === 'webfetch' ||
+            pat.toLowerCase() === 'web_fetch' ||
             pat.toLowerCase() === 'openrouter:web_fetch'
         );
       }
@@ -208,23 +196,16 @@ export async function runAgent(
 
   const filteredTools = filterTools(tools, config.allowedTools);
 
-  const aliasNames = [
-    'read', 'read_file', 'view_file',
-    'write', 'write_file',
-    'edit', 'edit_file',
-    'ls', 'list_files',
-    'bash', 'run_command',
-  ];
   const primaryToolNames = Array.from(new Set(
     filteredTools
       .map((t: any) => t.function?.name ?? t.config?.type)
-      .filter((n: string) => n && !aliasNames.includes(n))
+      .filter((n: string) => n && n !== 'read_persisted_result')
   ));
   const toolHint = primaryToolNames.length > 0
     ? `\n\nAvailable tools: ${primaryToolNames.join(', ')}`
     : '';
   const schemaHint = config.outputSchema
-    ? `\n\nImportant: Your final answer MUST strictly conform to this JSON schema:\n${JSON.stringify(config.outputSchema, null, 2)}\nReturn ONLY the bare JSON object conforming to the schema.`
+    ? `\n\nImportant: Your final answer MUST strictly conform to this JSON schema:\n${JSON.stringify(config.outputSchema, null, 2)}\nReturn ONLY the JSON object conforming to the schema.`
     : '';
   const instructions = config.systemPrompt.replace('{cwd}', process.cwd()) + toolHint + schemaHint;
 
@@ -235,16 +216,6 @@ export async function runAgent(
     tools: filteredTools as any,
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
   };
-  if (config.outputSchema) {
-    callModelParams.text = {
-      format: {
-        type: 'json_schema',
-        name: 'output_schema',
-        schema: config.outputSchema,
-        strict: true,
-      },
-    };
-  }
 
   const result = client.callModel(callModelParams);
 

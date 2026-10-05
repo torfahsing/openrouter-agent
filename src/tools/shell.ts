@@ -68,17 +68,3 @@ export const shellTool = tool({
   execute: executeShell,
 });
 
-export const bashTool = tool({
-  name: 'bash',
-  description: 'Execute a shell command in the current working directory (alias for shell)',
-  inputSchema: shellSchema,
-  execute: executeShell,
-});
-
-export const runCommandTool = tool({
-  name: 'run_command',
-  description: 'Execute a shell command in the current working directory (alias for shell)',
-  inputSchema: shellSchema,
-  execute: executeShell,
-});
-
