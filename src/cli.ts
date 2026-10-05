@@ -296,10 +296,36 @@ try {
     try {
       parsed = JSON.parse(extractJson(result.text));
     } catch {
+      if (values.json) {
+        // In NDJSON mode, the stream and done event were already emitted to stdout.
+        // Exit 0 so upstream orchestrator / worker can run tolerant repair rather than crashing.
+        process.exit(0);
+      }
       console.error('Error: agent output is not valid JSON (output-schema was specified)');
       process.exit(2);
     }
+
+    // Auto-wrap array if the schema expects a single-property object containing an array
+    if (outputSchema && typeof outputSchema === 'object' && (outputSchema as any).type === 'object' && Array.isArray(parsed)) {
+      const isArrayOfObjects = parsed.length === 0 || (typeof parsed[0] === 'object' && parsed[0] !== null && !Array.isArray(parsed[0]));
+      if (isArrayOfObjects) {
+        const requiredKeys = Array.isArray((outputSchema as any).required) ? ((outputSchema as any).required as string[]) : [];
+        if (requiredKeys.length === 1) {
+          const singleKey = requiredKeys[0]!;
+          const propSchema = ((outputSchema as any).properties as Record<string, any> | undefined)?.[singleKey];
+          if (propSchema && propSchema.type === 'array') {
+            parsed = { [singleKey]: parsed };
+          }
+        }
+      }
+    }
+
     if (!validate(parsed)) {
+      if (values.json) {
+        // In NDJSON mode, the stream and done event were already emitted to stdout.
+        // Exit 0 so upstream orchestrator / worker can run tolerant repair rather than crashing.
+        process.exit(0);
+      }
       console.error(`Error: agent output failed schema validation: ${ajv.errorsText(validate.errors)}`);
       process.exit(2);
     }

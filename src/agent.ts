@@ -178,13 +178,6 @@ export async function runAgent(
   const startedAt = Date.now();
   const client = new OpenRouter({ apiKey: config.apiKey });
 
-  // Structured Logging to stderr for observability
-  process.stderr.write(JSON.stringify({ 
-    type: 'agent_start', 
-    timestamp: new Date().toISOString(), 
-    model: config.model 
-  }) + '\n');
-
   let activeInput: string | ChatMessage[] = input;
   
   if (Array.isArray(activeInput) && activeInput.length > 40) {
@@ -249,30 +242,11 @@ export async function runAgent(
               catch { return {}; }
             })();
             
-            // Log tool calls to stderr
-            process.stderr.write(JSON.stringify({
-              type: 'tool_call',
-              timestamp: new Date().toISOString(),
-              name: item.name,
-              callId: item.callId,
-              args,
-            }) + '\n');
-
             options?.onEvent?.({ type: 'tool_call', name: item.name, callId: item.callId, args });
           }
         } else if (item.type === 'function_call_output') {
           executedCallIds.add(item.callId);
           const out = typeof item.output === 'string' ? item.output : JSON.stringify(item.output);
-          const preview = out.length > 200 ? out.slice(0, 200) + '...' : out;
-          
-          // Log tool results to stderr
-          process.stderr.write(JSON.stringify({
-            type: 'tool_result',
-            timestamp: new Date().toISOString(),
-            name: callNames.get(item.callId) ?? 'unknown',
-            callId: item.callId,
-            outputSummary: preview,
-          }) + '\n');
 
           options?.onEvent?.({
             type: 'tool_result',
@@ -316,14 +290,6 @@ export async function runAgent(
       // keep response.usage as fallback
     }
 
-    // Log execution termination to stderr
-    process.stderr.write(JSON.stringify({
-      type: 'agent_end',
-      timestamp: new Date().toISOString(),
-      durationMs,
-      usage: sessionUsage,
-    }) + '\n');
-
     options?.onEvent?.({ type: 'done', usage: sessionUsage, durationMs });
     return { text, usage: sessionUsage, output: response.output, durationMs };
   } catch (err: any) {
@@ -333,13 +299,6 @@ export async function runAgent(
     (enrichedErr as any).status = err?.status ?? err?.statusCode ?? err?.error?.code;
     (enrichedErr as any).statusCode = (enrichedErr as any).status;
     (enrichedErr as any).error = err.error ?? err.data$?.error;
-    (enrichedErr as any).raw = err;
-
-    process.stderr.write(JSON.stringify({
-      type: 'error',
-      timestamp: new Date().toISOString(),
-      message: formattedMessage,
-    }) + '\n');
     throw enrichedErr;
   } finally {
     options?.signal?.removeEventListener('abort', onAbort);
@@ -374,14 +333,6 @@ export async function runAgentWithRetry(
       if (!retryable || attempt === max || mutatingToolCallsMade > 0) throw err;
       
       const delay = Math.min(1000 * 2 ** attempt, 30000);
-      process.stderr.write(JSON.stringify({
-        type: 'retry_wait',
-        timestamp: new Date().toISOString(),
-        attempt: attempt + 1,
-        delayMs: delay,
-        error: err.message,
-      }) + '\n');
-      
       await new Promise((r) => setTimeout(r, delay));
     }
   }
