@@ -212,6 +212,24 @@ export async function runAgent(
 
   const result = client.callModel(callModelParams);
 
+function detectRepetitionLoop(text: string, minCycleLen = 15, maxCycleLen = 500, minRepeats = 3): boolean {
+  if (text.length < minCycleLen * minRepeats) return false;
+  const maxL = Math.min(maxCycleLen, Math.floor(text.length / minRepeats));
+  for (let L = minCycleLen; L <= maxL; L++) {
+    const candidate = text.slice(-L);
+    let repeats = 1;
+    let offset = text.length - L;
+    while (offset >= L && text.slice(offset - L, offset) === candidate) {
+      repeats++;
+      offset -= L;
+      if (repeats >= minRepeats) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
   const onAbort = () => result.cancel();
   options?.signal?.addEventListener('abort', onAbort);
   if (options?.signal?.aborted) result.cancel();
@@ -225,8 +243,13 @@ export async function runAgent(
     const streamText = async () => {
       for await (const delta of result.getTextStream()) {
         if (options?.signal?.aborted) break;
-        options?.onEvent?.({ type: 'text', delta });
         accumulatedText += delta;
+        if (detectRepetitionLoop(accumulatedText)) {
+          console.error('[agent] Repetition degeneration loop detected in model output, aborting turn');
+          result.cancel();
+          throw new Error('Model output entered infinite repetition loop');
+        }
+        options?.onEvent?.({ type: 'text', delta });
       }
     };
 
