@@ -85,3 +85,25 @@ export const fileReadTool = tool({
   execute: (params, ctx) => executeFileRead(params, ctx),
 });
 
+export const readFileTool = tool({
+  name: 'read_file',
+  description: 'Read the contents of a file (alias for file_read)',
+  inputSchema: fileReadSchema,
+  execute: (params, ctx) => executeFileRead(params, ctx),
+});
+
+export const readTool = tool({
+  name: 'read',
+  description: 'Read the contents of a file (alias for file_read)',
+  inputSchema: fileReadSchema,
+  execute: (params, ctx) => executeFileRead(params, ctx),
+});
+
+export const viewFileTool = tool({
+  name: 'view_file',
+  description: 'Read the contents of a file (alias for file_read)',
+  inputSchema: fileReadSchema,
+  execute: (params, ctx) => executeFileRead(params, ctx),
+});
+
+

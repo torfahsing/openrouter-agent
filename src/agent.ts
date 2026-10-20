@@ -161,11 +161,39 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
   return allTools.filter((t) => {
     const localName = (t as any).function?.name;
     if (localName) {
-      if (localName === 'shell') {
+      if (['shell', 'bash', 'run_command'].includes(localName)) {
         return hasShellAllowed;
       }
       if (localName === 'read_persisted_result') {
         return true;
+      }
+      if (['file_read', 'read_file', 'read', 'view_file'].includes(localName)) {
+        return (
+          allowedTools.includes('file_read') ||
+          allowedTools.includes('read_file') ||
+          allowedTools.includes('read')
+        );
+      }
+      if (['file_write', 'write_file', 'write'].includes(localName)) {
+        return (
+          allowedTools.includes('file_write') ||
+          allowedTools.includes('write_file') ||
+          allowedTools.includes('write')
+        );
+      }
+      if (['file_edit', 'edit_file', 'edit'].includes(localName)) {
+        return (
+          allowedTools.includes('file_edit') ||
+          allowedTools.includes('edit_file') ||
+          allowedTools.includes('edit')
+        );
+      }
+      if (['list_dir', 'list_files', 'ls'].includes(localName)) {
+        return (
+          allowedTools.includes('list_dir') ||
+          allowedTools.includes('list_files') ||
+          allowedTools.includes('ls')
+        );
       }
       return allowedTools.includes(localName);
     }
@@ -229,10 +257,19 @@ export async function runAgent(
 
   const filteredTools = filterTools(tools, config.allowedTools);
 
+  const ALIAS_TOOLS = new Set([
+    'read_file', 'read', 'view_file',
+    'write_file', 'write',
+    'edit_file', 'edit',
+    'list_files', 'ls',
+    'bash', 'run_command',
+    'read_persisted_result',
+  ]);
+
   const primaryToolNames = Array.from(new Set(
     filteredTools
       .map((t: any) => t.function?.name ?? t.config?.type)
-      .filter((n: string) => n && n !== 'read_persisted_result')
+      .filter((n: string) => n && !ALIAS_TOOLS.has(n))
   ));
   const toolHint = primaryToolNames.length > 0
     ? `\n\nAvailable tools: ${primaryToolNames.join(', ')}`

@@ -42,3 +42,18 @@ export const listDirTool = tool({
   inputSchema: listDirSchema,
   execute: executeListDir,
 });
+
+export const listFilesTool = tool({
+  name: 'list_files',
+  description: 'List the contents of a directory (alias for list_dir)',
+  inputSchema: listDirSchema,
+  execute: executeListDir,
+});
+
+export const lsTool = tool({
+  name: 'ls',
+  description: 'List the contents of a directory (alias for list_dir)',
+  inputSchema: listDirSchema,
+  execute: executeListDir,
+});
+

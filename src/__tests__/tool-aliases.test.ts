@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'bun:test';
 import { tools } from '../tools/index.js';
 
-describe('canonical tools', () => {
-  it('registers only canonical tools in tool registry', () => {
+describe('canonical and alias tools', () => {
+  it('registers canonical tools and alias tools in tool registry', () => {
     const names = tools.map((t: any) => t.function?.name ?? t.config?.type);
     expect(names).toContain('file_read');
     expect(names).toContain('file_write');
@@ -12,24 +12,26 @@ describe('canonical tools', () => {
     expect(names).toContain('grep');
     expect(names).toContain('glob');
 
-    // No duplicate alias tools registered
-    expect(names).not.toContain('read_file');
-    expect(names).not.toContain('write_file');
-    expect(names).not.toContain('edit_file');
-    expect(names).not.toContain('list_files');
-    expect(names).not.toContain('ls');
-    expect(names).not.toContain('bash');
-    expect(names).not.toContain('run_command');
+    // Alias tools registered to support models that use common alternate names
+    expect(names).toContain('read_file');
+    expect(names).toContain('write_file');
+    expect(names).toContain('edit_file');
+    expect(names).toContain('list_files');
+    expect(names).toContain('ls');
+    expect(names).toContain('bash');
+    expect(names).toContain('run_command');
   });
 });
 
 describe('filterTools', () => {
-  it('includes only requested tools when allowedTools is specified', async () => {
+  it('includes requested tools and their aliases when allowedTools is specified', async () => {
     const { filterTools } = await import('../agent.js');
     const filtered = filterTools(tools, ['file_read', 'list_dir']);
     const names = filtered.map((t: any) => t.function?.name ?? t.config?.type);
     expect(names).toContain('file_read');
+    expect(names).toContain('read_file');
     expect(names).toContain('list_dir');
+    expect(names).toContain('list_files');
     expect(names).not.toContain('shell');
     expect(names).not.toContain('file_write');
     expect(names).not.toContain('openrouter_models');
