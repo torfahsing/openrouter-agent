@@ -287,6 +287,21 @@ export async function runAgent(
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
   };
 
+  const origCallModel = client.callModel.bind(client);
+  (client as any).callModel = (params: any, callOptions: any) => {
+    const res = origCallModel(params, callOptions);
+    // Strip duplicate alias tools from the API wire request so models are only
+    // presented with canonical tools in their schema, while keeping alias implementations
+    // available locally in `res.options.tools` so unprompted model calls to `read_file`,
+    // `bash`, etc. still execute transparently without halting.
+    if (res.options?.request?.tools) {
+      res.options.request.tools = res.options.request.tools.filter(
+        (t: any) => !ALIAS_TOOLS.has(t.name)
+      );
+    }
+    return res;
+  };
+
   const result = client.callModel(callModelParams);
 
 function detectRepetitionLoop(text: string, minCycleLen = 15, maxCycleLen = 500, minRepeats = 3): boolean {

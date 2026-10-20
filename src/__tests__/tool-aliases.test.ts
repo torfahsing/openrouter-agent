@@ -51,4 +51,52 @@ describe('filterTools', () => {
     expect(names).toContain('shell');
     expect(names).not.toContain('file_read');
   });
+
+  it('keeps wire request tools canonical while preserving aliases in execution tools', async () => {
+    const { OpenRouter } = await import('@openrouter/agent');
+    const client = new OpenRouter({ apiKey: 'mock' });
+    const ALIAS_TOOLS = new Set([
+      'read_file', 'read', 'view_file',
+      'write_file', 'write',
+      'edit_file', 'edit',
+      'list_files', 'ls',
+      'bash', 'run_command',
+      'read_persisted_result',
+    ]);
+
+    const origCallModel = client.callModel.bind(client);
+    (client as any).callModel = (params: any, callOptions: any) => {
+      const res = origCallModel(params, callOptions);
+      if (res.options?.request?.tools) {
+        res.options.request.tools = res.options.request.tools.filter(
+          (t: any) => !ALIAS_TOOLS.has(t.name)
+        );
+      }
+      return res;
+    };
+
+    const res = client.callModel({
+      model: 'test-model',
+      instructions: 'test',
+      input: 'hello',
+      tools: tools as any,
+    });
+
+    const wireNames = res.options.request.tools.map((t: any) => t.name ?? t.type);
+    // Wire request MUST NOT contain duplicate aliases
+    expect(wireNames).toContain('file_read');
+    expect(wireNames).toContain('file_write');
+    expect(wireNames).toContain('shell');
+    expect(wireNames).not.toContain('read_file');
+    expect(wireNames).not.toContain('write_file');
+    expect(wireNames).not.toContain('bash');
+    expect(wireNames).not.toContain('run_command');
+
+    // Execution tools MUST retain aliases so unprompted model calls work
+    const execNames = res.options.tools.map((t: any) => t.function?.name ?? t.config?.type);
+    expect(execNames).toContain('file_read');
+    expect(execNames).toContain('read_file');
+    expect(execNames).toContain('shell');
+    expect(execNames).toContain('bash');
+  });
 });
