@@ -4,8 +4,39 @@ import { stepCountIs, maxCost } from '@openrouter/agent/stop-conditions';
 import type { AgentConfig } from './config.js';
 import { tools } from './tools/index.js';
 import { compactMessages } from './compaction.js';
+import { pruneHistoricalToolOutputs } from './history-pruner.js';
 
 import { extractOpenRouterErrorMessage } from './error.js';
+
+// Monkeypatch ModelResult.prototype.makeFollowupRequest to bound multi-turn conversation payload
+const originalMakeFollowupRequest = (ModelResult.prototype as any).makeFollowupRequest;
+if (typeof originalMakeFollowupRequest === 'function') {
+  (ModelResult.prototype as any).makeFollowupRequest = async function (
+    currentResponse: any,
+    toolResults: any,
+    turnNumber: number,
+  ) {
+    // 1. Cap any oversized outputs in the incoming toolResults for the current turn
+    if (Array.isArray(toolResults)) {
+      for (const res of toolResults) {
+        if (res && res.type === 'function_call_output' && typeof res.output === 'string') {
+          if (res.output.length > 40_000) {
+            const head = res.output.slice(0, 15_000);
+            const tail = res.output.slice(-15_000);
+            res.output = `${head}\n\n... [output truncated: ${res.output.length - 30_000} chars omitted to stay within context limits] ...\n\n${tail}`;
+          }
+        }
+      }
+    }
+
+    // 2. Prune historical tool outputs from earlier turns
+    if (Array.isArray(this.resolvedRequest?.input)) {
+      this.resolvedRequest.input = pruneHistoricalToolOutputs(this.resolvedRequest.input);
+    }
+
+    return originalMakeFollowupRequest.call(this, currentResponse, toolResults, turnNumber);
+  };
+}
 
 // Monkeypatch ModelResult.prototype.pipeAndConsumeStream to provide detailed API error messages
 (ModelResult.prototype as any).pipeAndConsumeStream = async function (stream: any, turnNumber: number) {
@@ -179,7 +210,16 @@ export async function runAgent(
   const client = new OpenRouter({ apiKey: config.apiKey });
 
   let activeInput: string | ChatMessage[] = input;
-  
+
+  if (typeof activeInput === 'string' && activeInput.length > 500_000) {
+    activeInput =
+      activeInput.slice(0, 200_000) +
+      '\n\n... [initial prompt truncated to stay within context limits] ...\n\n' +
+      activeInput.slice(-200_000);
+  } else if (Array.isArray(activeInput)) {
+    activeInput = pruneHistoricalToolOutputs(activeInput as any[]);
+  }
+
   if (Array.isArray(activeInput) && activeInput.length > 40) {
     activeInput = (await compactMessages(client, activeInput, {
       threshold: 40,

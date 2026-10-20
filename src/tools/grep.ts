@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { spawnSync } from 'node:child_process';
 import { resolve, relative, join } from 'node:path';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { offloadIfLarge } from '../tool-offload.js';
 
 function walkAndFind(dir: string, baseDir: string, regex: RegExp, results: any[]): void {
   if (results.length >= 100) return;
@@ -51,7 +52,7 @@ export const grepTool = tool({
     glob: z.string().optional().describe('File filter glob, e.g. "*.ts" or "!**/test/**"'),
     ignoreCase: z.boolean().optional().describe('Perform a case-insensitive search'),
   }),
-  execute: async ({ pattern, path, glob, ignoreCase }) => {
+  execute: async ({ pattern, path, glob, ignoreCase }, ctx?: any) => {
     const root = resolve(path ?? process.cwd());
     if (!existsSync(root)) {
       return { error: `Path not found: ${root}` };
@@ -87,7 +88,8 @@ export const grepTool = tool({
             if (obj.type === 'match') {
               const file = relative(root, obj.data.path.text);
               const lineNumber = obj.data.line_number;
-              const content = obj.data.lines.text.replace(/\r?\n$/, '');
+              const rawText = obj.data.lines.text.replace(/\r?\n$/, '');
+              const content = rawText.length > 500 ? rawText.slice(0, 500) + '… [line truncated]' : rawText;
               matches.push({ file, line: lineNumber, content });
               if (matches.length >= 100) break;
             }
@@ -95,7 +97,7 @@ export const grepTool = tool({
             // Ignore unparseable lines
           }
         }
-        return { results: matches };
+        return offloadIfLarge({ results: matches }, ctx);
       } catch (err: any) {
         // Fallback to manual walk on failure
       }
@@ -107,7 +109,7 @@ export const grepTool = tool({
       const regex = new RegExp(pattern, regexFlags);
       const results: any[] = [];
       walkAndFind(root, root, regex, results);
-      return { results };
+      return offloadIfLarge({ results }, ctx);
     } catch (err: any) {
       return { error: err.message };
     }
