@@ -60,6 +60,72 @@ if (typeof originalShouldStopExecution === 'function') {
   };
 }
 
+// Monkeypatch ModelResult.prototype.makeFinalResponseRequest and retryCurrentRequest
+// to prevent crashes on providers that reject toolChoice: 'none' (e.g. Meta / Llama on OpenRouter)
+const originalMakeFinalResponseRequest = (ModelResult.prototype as any).makeFinalResponseRequest;
+if (typeof originalMakeFinalResponseRequest === 'function') {
+  (ModelResult.prototype as any).makeFinalResponseRequest = async function (
+    currentResponse: any,
+    toolOutputs: any,
+    allowFinalResponse: any,
+    turnNumber: number,
+  ) {
+    try {
+      return await originalMakeFinalResponseRequest.call(
+        this,
+        currentResponse,
+        toolOutputs,
+        allowFinalResponse,
+        turnNumber,
+      );
+    } catch (err: any) {
+      const errStr = String(err?.message || '') + String(err?.body || '');
+      if (errStr.includes('tool_choice') || errStr.includes('toolChoice')) {
+        // Provider rejects toolChoice: "none". Return current response gracefully.
+        return currentResponse;
+      }
+      throw err;
+    }
+  };
+}
+
+const originalRetryCurrentRequest = (ModelResult.prototype as any).retryCurrentRequest;
+if (typeof originalRetryCurrentRequest === 'function') {
+  (ModelResult.prototype as any).retryCurrentRequest = async function (turnNumber: number) {
+    try {
+      return await originalRetryCurrentRequest.call(this, turnNumber);
+    } catch (err: any) {
+      const errStr = String(err?.message || '') + String(err?.body || '');
+      if (errStr.includes('tool_choice') || errStr.includes('toolChoice')) {
+        // Provider rejects toolChoice: "none". Retry without forced toolChoice if possible.
+        if (this.resolvedRequest) {
+          const fallbackRequest = { ...this.resolvedRequest, stream: true };
+          delete fallbackRequest.toolChoice;
+          try {
+            const { betaResponsesSend } = await import('@openrouter/sdk/funcs/betaResponsesSend');
+            const startedAt = performance.now();
+            const newResult = await (betaResponsesSend as any)(
+              this.options.client,
+              { responsesRequest: fallbackRequest },
+              this.dispatchRequestOptions(),
+            );
+            if (newResult.ok) {
+              const response = await this.materializeResponse(newResult.value, turnNumber);
+              await this.emitPostModelCall(response, startedAt, 'retry', turnNumber);
+              return response;
+            }
+          } catch {
+            // If fallback retry fails, return empty object to tolerate end of run
+            return { id: 'fallback', output: [] };
+          }
+        }
+        return { id: 'fallback', output: [] };
+      }
+      throw err;
+    }
+  };
+}
+
 // Monkeypatch ModelResult.prototype.pipeAndConsumeStream to provide detailed API error messages
 (ModelResult.prototype as any).pipeAndConsumeStream = async function (stream: any, turnNumber: number) {
   const broadcaster = (this as any).turnBroadcaster;
@@ -307,6 +373,7 @@ export async function runAgent(
     input: activeInput as string | Item[],
     tools: filteredTools as any,
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
+    allowFinalResponse: false,
   };
 
   const origCallModel = client.callModel.bind(client);
