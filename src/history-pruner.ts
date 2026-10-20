@@ -18,8 +18,9 @@ export const PRUNE_DEFAULTS: Required<PruneHistoryOptions> = {
 
 function truncateString(str: string, maxChars: number, marker: string): string {
   if (str.length <= maxChars) return str;
-  const headChars = Math.max(10, Math.floor(maxChars * 0.45));
-  const tailChars = Math.max(10, Math.floor(maxChars * 0.45));
+  const avail = Math.max(20, maxChars - marker.length);
+  const headChars = Math.floor(avail * 0.5);
+  const tailChars = Math.floor(avail * 0.5);
   return `${str.slice(0, headChars)}${marker}${str.slice(-tailChars)}`;
 }
 
@@ -27,7 +28,7 @@ function truncateString(str: string, maxChars: number, marker: string): string {
  * Prunes a tool output string while guaranteeing the returned value remains
  * valid JSON (required because @openrouter/agent executes JSON.parse(tr.output)).
  */
-function pruneToolOutput(rawOutput: string, maxChars: number, isHistorical: boolean): string {
+export function pruneToolOutput(rawOutput: string, maxChars: number, isHistorical: boolean): string {
   if (rawOutput.length <= maxChars) {
     // Already small enough. Ensure it parses cleanly if needed; if already valid JSON, keep as-is.
     try {
@@ -46,27 +47,32 @@ function pruneToolOutput(rawOutput: string, maxChars: number, isHistorical: bool
     const parsed = JSON.parse(rawOutput);
     if (parsed && typeof parsed === 'object') {
       let anyTruncated = false;
+      const budgetPerField = Math.max(40, Math.floor(maxChars * 0.7));
       for (const [key, val] of Object.entries(parsed)) {
-        if (typeof val === 'string' && val.length > maxChars) {
-          (parsed as any)[key] = truncateString(val, maxChars, marker);
+        if (typeof val === 'string' && val.length > budgetPerField) {
+          (parsed as any)[key] = truncateString(val, budgetPerField, marker);
           anyTruncated = true;
         }
       }
-      if (Array.isArray((parsed as any).results)) {
+      if (Array.isArray((parsed as any).results) && (parsed as any).results.length > 3) {
         (parsed as any).results = (parsed as any).results.slice(0, 3);
         (parsed as any).truncated = true;
         anyTruncated = true;
       }
-      if (Array.isArray((parsed as any).entries)) {
+      if (Array.isArray((parsed as any).entries) && (parsed as any).entries.length > 10) {
         (parsed as any).entries = (parsed as any).entries.slice(0, 10);
         (parsed as any).truncated = true;
         anyTruncated = true;
       }
-      if (!anyTruncated && JSON.stringify(parsed).length > maxChars) {
-        return JSON.stringify({
-          truncated: true,
-          preview: truncateString(JSON.stringify(parsed), maxChars, marker),
-        });
+      if (!anyTruncated) {
+        const serialized = JSON.stringify(parsed);
+        if (serialized.length > maxChars) {
+          return JSON.stringify({
+            ...parsed,
+            truncated: true,
+            summary: truncateString(serialized, budgetPerField, marker),
+          });
+        }
       }
       return JSON.stringify(parsed);
     }

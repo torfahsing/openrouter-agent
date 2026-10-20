@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { pruneHistoricalToolOutputs } from '../history-pruner.js';
+import { pruneHistoricalToolOutputs, pruneToolOutput } from '../history-pruner.js';
+import { ModelResult } from '@openrouter/agent';
 
 describe('pruneHistoricalToolOutputs', () => {
   it('returns small or short item arrays untouched', () => {
@@ -93,5 +94,51 @@ describe('pruneHistoricalToolOutputs', () => {
     expect(result[1].content.length).toBeLessThan(500);
     expect(result[1].content).toContain('historical output truncated');
     expect(() => JSON.parse(result[1].content)).not.toThrow();
+  });
+
+  it('pruneToolOutput strictly preserves valid JSON across all input types', () => {
+    // 1. Valid JSON object
+    const objJson = JSON.stringify({ stdout: 'hello'.repeat(1000), exitCode: 0 });
+    const prunedObj = pruneToolOutput(objJson, 200, false);
+    expect(() => JSON.parse(prunedObj)).not.toThrow();
+    const parsedObj = JSON.parse(prunedObj);
+    expect(parsedObj.exitCode).toBe(0);
+
+    // 2. Raw unescaped string
+    const rawStr = 'Error: test failed with lots of details '.repeat(50);
+    const prunedRaw = pruneToolOutput(rawStr, 100, false);
+    expect(() => JSON.parse(prunedRaw)).not.toThrow();
+
+    // 3. String that looks like partial JSON
+    const partialJson = '{"broken": "unterminated string literal...';
+    const prunedPartial = pruneToolOutput(partialJson, 100, false);
+    expect(() => JSON.parse(prunedPartial)).not.toThrow();
+  });
+
+  it('shouldStopExecution handles malformed non-JSON toolResults without throwing', async () => {
+    // Ensure agent module is loaded so monkeypatches take effect
+    await import('../agent.js');
+
+    const fakeResult = Object.create(ModelResult.prototype);
+    fakeResult.options = { stopWhen: [] };
+    fakeResult.allToolExecutionRounds = [
+      {
+        round: 1,
+        response: { output: [] },
+        toolCalls: [{ id: 'call_1', name: 'shell' }],
+        toolResults: [
+          {
+            type: 'function_call_output',
+            callId: 'call_1',
+            output: '{"unterminated: "this is completely invalid json...',
+          },
+        ],
+      },
+    ];
+
+    // Calling shouldStopExecution should sanitize the output and not throw SyntaxError
+    expect(async () => {
+      await fakeResult.shouldStopExecution();
+    }).not.toThrow();
   });
 });

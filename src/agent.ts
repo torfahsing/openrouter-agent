@@ -4,7 +4,7 @@ import { stepCountIs, maxCost } from '@openrouter/agent/stop-conditions';
 import type { AgentConfig } from './config.js';
 import { tools } from './tools/index.js';
 import { compactMessages } from './compaction.js';
-import { pruneHistoricalToolOutputs } from './history-pruner.js';
+import { pruneHistoricalToolOutputs, pruneToolOutput } from './history-pruner.js';
 
 import { extractOpenRouterErrorMessage } from './error.js';
 
@@ -16,14 +16,12 @@ if (typeof originalMakeFollowupRequest === 'function') {
     toolResults: any,
     turnNumber: number,
   ) {
-    // 1. Cap any oversized outputs in the incoming toolResults for the current turn
+    // 1. Cap any oversized outputs in incoming toolResults while strictly guaranteeing valid JSON
     if (Array.isArray(toolResults)) {
       for (const res of toolResults) {
         if (res && res.type === 'function_call_output' && typeof res.output === 'string') {
           if (res.output.length > 40_000) {
-            const head = res.output.slice(0, 15_000);
-            const tail = res.output.slice(-15_000);
-            res.output = `${head}\n\n... [output truncated: ${res.output.length - 30_000} chars omitted to stay within context limits] ...\n\n${tail}`;
+            res.output = pruneToolOutput(res.output, 40_000, false);
           }
         }
       }
@@ -35,6 +33,30 @@ if (typeof originalMakeFollowupRequest === 'function') {
     }
 
     return originalMakeFollowupRequest.call(this, currentResponse, toolResults, turnNumber);
+  };
+}
+
+// Monkeypatch ModelResult.prototype.shouldStopExecution so that malformed or non-JSON outputs
+// in allToolExecutionRounds can never crash with SyntaxError: JSON Parse error
+const originalShouldStopExecution = (ModelResult.prototype as any).shouldStopExecution;
+if (typeof originalShouldStopExecution === 'function') {
+  (ModelResult.prototype as any).shouldStopExecution = async function () {
+    if (Array.isArray(this.allToolExecutionRounds)) {
+      for (const round of this.allToolExecutionRounds) {
+        if (Array.isArray(round?.toolResults)) {
+          for (const tr of round.toolResults) {
+            if (tr && tr.type === 'function_call_output' && typeof tr.output === 'string') {
+              try {
+                JSON.parse(tr.output);
+              } catch {
+                tr.output = JSON.stringify(tr.output);
+              }
+            }
+          }
+        }
+      }
+    }
+    return originalShouldStopExecution.call(this);
   };
 }
 
