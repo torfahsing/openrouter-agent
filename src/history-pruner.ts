@@ -16,10 +16,74 @@ export const PRUNE_DEFAULTS: Required<PruneHistoryOptions> = {
   maxTotalPayloadBytes: 2_000_000, // 2 MB target (well below OpenRouter's 8 MB limit)
 };
 
+function truncateString(str: string, maxChars: number, marker: string): string {
+  if (str.length <= maxChars) return str;
+  const headChars = Math.max(10, Math.floor(maxChars * 0.45));
+  const tailChars = Math.max(10, Math.floor(maxChars * 0.45));
+  return `${str.slice(0, headChars)}${marker}${str.slice(-tailChars)}`;
+}
+
+/**
+ * Prunes a tool output string while guaranteeing the returned value remains
+ * valid JSON (required because @openrouter/agent executes JSON.parse(tr.output)).
+ */
+function pruneToolOutput(rawOutput: string, maxChars: number, isHistorical: boolean): string {
+  if (rawOutput.length <= maxChars) {
+    // Already small enough. Ensure it parses cleanly if needed; if already valid JSON, keep as-is.
+    try {
+      JSON.parse(rawOutput);
+      return rawOutput;
+    } catch {
+      return JSON.stringify(rawOutput);
+    }
+  }
+
+  const marker = isHistorical
+    ? `\n\n... [historical output truncated (${rawOutput.length} chars) to preserve context] ...\n\n`
+    : `\n\n... [output truncated (${rawOutput.length} chars) to stay within limits] ...\n\n`;
+
+  try {
+    const parsed = JSON.parse(rawOutput);
+    if (parsed && typeof parsed === 'object') {
+      let anyTruncated = false;
+      for (const [key, val] of Object.entries(parsed)) {
+        if (typeof val === 'string' && val.length > maxChars) {
+          (parsed as any)[key] = truncateString(val, maxChars, marker);
+          anyTruncated = true;
+        }
+      }
+      if (Array.isArray((parsed as any).results)) {
+        (parsed as any).results = (parsed as any).results.slice(0, 3);
+        (parsed as any).truncated = true;
+        anyTruncated = true;
+      }
+      if (Array.isArray((parsed as any).entries)) {
+        (parsed as any).entries = (parsed as any).entries.slice(0, 10);
+        (parsed as any).truncated = true;
+        anyTruncated = true;
+      }
+      if (!anyTruncated && JSON.stringify(parsed).length > maxChars) {
+        return JSON.stringify({
+          truncated: true,
+          preview: truncateString(JSON.stringify(parsed), maxChars, marker),
+        });
+      }
+      return JSON.stringify(parsed);
+    }
+    if (typeof parsed === 'string') {
+      return JSON.stringify(truncateString(parsed, maxChars, marker));
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    // If not JSON, truncate the raw string and stringify it so JSON.parse never fails
+    return JSON.stringify(truncateString(rawOutput, maxChars, marker));
+  }
+}
+
 /**
  * Bounds multi-turn conversation history by pruning large outputs from older
  * tool rounds while preserving recent context, task instructions, and wire
- * invariants (such as tool_call / function_call_output pairing and call IDs).
+ * invariants (such as tool_call / function_call_output pairing and JSON validity).
  */
 export function pruneHistoricalToolOutputs(
   items: any[],
@@ -53,31 +117,15 @@ export function pruneHistoricalToolOutputs(
     const maxChars = isHistorical ? maxHistoricalToolOutputChars : maxRecentToolOutputChars;
 
     if (isSdkToolOutput) {
-      if (item.output.length > maxChars) {
-        const headChars = Math.max(20, Math.floor(maxChars * 0.45));
-        const tailChars = Math.max(20, Math.floor(maxChars * 0.45));
-        const marker = isHistorical
-          ? `\n\n... [historical output truncated (${item.output.length} chars) to preserve context] ...\n\n`
-          : `\n\n... [output truncated (${item.output.length} chars) to stay within limits] ...\n\n`;
-
-        return {
-          ...item,
-          output: `${item.output.slice(0, headChars)}${marker}${item.output.slice(-tailChars)}`,
-        };
-      }
+      return {
+        ...item,
+        output: pruneToolOutput(item.output, maxChars, isHistorical),
+      };
     } else if (isChatToolOutput) {
-      if (item.content.length > maxChars) {
-        const headChars = Math.max(20, Math.floor(maxChars * 0.45));
-        const tailChars = Math.max(20, Math.floor(maxChars * 0.45));
-        const marker = isHistorical
-          ? `\n\n... [historical output truncated (${item.content.length} chars) to preserve context] ...\n\n`
-          : `\n\n... [output truncated (${item.content.length} chars) to stay within limits] ...\n\n`;
-
-        return {
-          ...item,
-          content: `${item.content.slice(0, headChars)}${marker}${item.content.slice(-tailChars)}`,
-        };
-      }
+      return {
+        ...item,
+        content: pruneToolOutput(item.content, maxChars, isHistorical),
+      };
     }
 
     return item;
@@ -93,20 +141,16 @@ export function pruneHistoricalToolOutputs(
         if (index === 0) return item;
 
         if (item?.type === 'function_call_output' && typeof item.output === 'string') {
-          if (item.output.length > 400) {
-            return {
-              ...item,
-              output: `${item.output.slice(0, 150)}\n\n... [emergency payload pruning] ...\n\n${item.output.slice(-150)}`,
-            };
-          }
+          return {
+            ...item,
+            output: pruneToolOutput(item.output, 300, true),
+          };
         }
         if (item?.role === 'tool' && typeof item.content === 'string') {
-          if (item.content.length > 400) {
-            return {
-              ...item,
-              content: `${item.content.slice(0, 150)}\n\n... [emergency payload pruning] ...\n\n${item.content.slice(-150)}`,
-            };
-          }
+          return {
+            ...item,
+            content: pruneToolOutput(item.content, 300, true),
+          };
         }
         return item;
       });
