@@ -473,7 +473,7 @@ function detectRepetitionLoop(text: string, minCycleLen = 15, maxCycleLen = 500,
     const unexecuted = Array.from(callNames.entries()).filter(([callId]) => !executedCallIds.has(callId));
     if (unexecuted.length > 0) {
       const names = unexecuted.map(([_, name]) => name).join(', ');
-      throw new Error(`Agent execution halted prematurely with unexecuted tool call(s): ${names}`);
+      console.warn(`[agent] Run ended with unexecuted tool call(s): ${names}`);
     }
 
     const response = await result.getResponse();
