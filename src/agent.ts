@@ -373,7 +373,6 @@ export async function runAgent(
     input: activeInput as string | Item[],
     tools: filteredTools as any,
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
-    allowFinalResponse: false,
   };
 
   const origCallModel = client.callModel.bind(client);
