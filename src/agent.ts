@@ -351,7 +351,6 @@ export async function runAgent(
     'edit_file', 'edit',
     'list_files', 'ls',
     'bash', 'run_command',
-    'read_persisted_result',
   ]);
 
   const primaryToolNames = Array.from(new Set(

@@ -1,4 +1,5 @@
-import { resolve, sep } from 'node:path';
+import { resolve, sep, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 
 export interface OffloadConfig {
@@ -13,7 +14,7 @@ export interface OffloadConfig {
 export const OFFLOAD_DEFAULTS: OffloadConfig = {
   maxInlineBytes: 50_000,
   previewBytes: 2_000,
-  storageDir: '.agent-state/tool-results',
+  storageDir: join(tmpdir(), 'specflow-tool-results'),
 };
 
 /**

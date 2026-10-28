@@ -61,7 +61,6 @@ describe('filterTools', () => {
       'edit_file', 'edit',
       'list_files', 'ls',
       'bash', 'run_command',
-      'read_persisted_result',
     ]);
 
     const origCallModel = client.callModel.bind(client);
@@ -87,6 +86,7 @@ describe('filterTools', () => {
     expect(wireNames).toContain('file_read');
     expect(wireNames).toContain('file_write');
     expect(wireNames).toContain('shell');
+    expect(wireNames).toContain('read_persisted_result');
     expect(wireNames).not.toContain('read_file');
     expect(wireNames).not.toContain('write_file');
     expect(wireNames).not.toContain('bash');

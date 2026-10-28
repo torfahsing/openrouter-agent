@@ -2,17 +2,45 @@ import { tool } from '@openrouter/agent/tool';
 import { z } from 'zod';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
+export const singleEditItemSchema = z.object({
+  old_text: z.string().optional().describe('The exact text to find and replace'),
+  oldText: z.string().optional().describe('Alias for old_text'),
+  target: z.string().optional().describe('Alias for old_text'),
+  old: z.string().optional().describe('Alias for old_text'),
+  new_text: z.string().optional().describe('The new text to replace it with'),
+  newText: z.string().optional().describe('Alias for new_text'),
+  replacement: z.string().optional().describe('Alias for new_text'),
+  new: z.string().optional().describe('Alias for new_text'),
+});
+
 export const fileEditSchema = z.object({
   path: z.string().optional().describe('Absolute path to the file to edit'),
   file_path: z.string().optional().describe('Alias for path'),
-  edits: z.array(z.object({
-    old_text: z.string().describe('The exact text to find and replace'),
-    new_text: z.string().describe('The new text to replace it with'),
-  })).describe('List of search-and-replace edits to apply'),
+  edits: z.array(singleEditItemSchema).optional().describe('List of search-and-replace edits to apply'),
+  old_text: z.string().optional().describe('For single edit: exact text to find and replace'),
+  oldText: z.string().optional().describe('Alias for old_text'),
+  target: z.string().optional().describe('Alias for old_text'),
+  old: z.string().optional().describe('Alias for old_text'),
+  new_text: z.string().optional().describe('For single edit: new text to replace it with'),
+  newText: z.string().optional().describe('Alias for new_text'),
+  replacement: z.string().optional().describe('Alias for new_text'),
+  new: z.string().optional().describe('Alias for new_text'),
 });
 
-export const executeFileEdit = async ({ path, file_path, edits }: { path?: string; file_path?: string; edits: Array<{ old_text: string; new_text: string }> }) => {
-  const targetPath = path || file_path;
+export const executeFileEdit = async (params: {
+  path?: string;
+  file_path?: string;
+  edits?: any[];
+  old_text?: string;
+  oldText?: string;
+  target?: string;
+  old?: string;
+  new_text?: string;
+  newText?: string;
+  replacement?: string;
+  new?: string;
+}) => {
+  const targetPath = params.path || params.file_path;
   if (!targetPath) {
     return { error: 'path is required' };
   }
@@ -20,12 +48,37 @@ export const executeFileEdit = async ({ path, file_path, edits }: { path?: strin
     return { error: `File not found: ${targetPath}` };
   }
 
+  const rawEdits: any[] = [];
+  if (Array.isArray(params.edits) && params.edits.length > 0) {
+    rawEdits.push(...params.edits);
+  }
+  const topOld = params.old_text ?? params.oldText ?? params.target ?? params.old;
+  const topNew = params.new_text ?? params.newText ?? params.replacement ?? params.new;
+  if (topOld !== undefined && topNew !== undefined) {
+    rawEdits.push({ old_text: topOld, new_text: topNew });
+  }
+
+  if (rawEdits.length === 0) {
+    return { error: 'No edits specified. Provide edits array or old_text/new_text.' };
+  }
+
+  const normalizedEdits = rawEdits.map((e) => ({
+    old_text: e.old_text ?? e.oldText ?? e.target ?? e.old,
+    new_text: e.new_text ?? e.newText ?? e.replacement ?? e.new ?? '',
+  }));
+
+  for (const edit of normalizedEdits) {
+    if (typeof edit.old_text !== 'string') {
+      return { error: 'Each edit must specify old_text (or oldText/target).' };
+    }
+  }
+
   try {
     const original = readFileSync(targetPath, 'utf-8');
     let current = original;
     let diffOutput = '';
 
-    for (const edit of edits) {
+    for (const edit of normalizedEdits) {
       const index = current.indexOf(edit.old_text);
       if (index === -1) {
         return { error: `Could not find exact match for edit in ${targetPath}. Make sure whitespace and characters match exactly.` };
