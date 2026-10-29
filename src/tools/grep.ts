@@ -18,7 +18,16 @@ function walkAndFind(dir: string, baseDir: string, regex: RegExp, results: any[]
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.sessions') {
+      if (
+        entry.name === 'node_modules' ||
+        entry.name === '.git' ||
+        entry.name === '.sessions' ||
+        entry.name === '.agent-state' ||
+        entry.name === 'dist' ||
+        entry.name === 'build' ||
+        entry.name === '.next' ||
+        entry.name === 'coverage'
+      ) {
         continue;
       }
       walkAndFind(fullPath, baseDir, regex, results);
@@ -28,10 +37,12 @@ function walkAndFind(dir: string, baseDir: string, regex: RegExp, results: any[]
         const lines = text.split('\n');
         for (let i = 0; i < lines.length; i++) {
           if (regex.test(lines[i])) {
+            const rawLine = lines[i];
+            const content = rawLine.length > 500 ? rawLine.slice(0, 500) + '… [line truncated]' : rawLine;
             results.push({
               file: relative(baseDir, fullPath),
               line: i + 1,
-              content: lines[i],
+              content,
             });
             if (results.length >= 100) return;
           }

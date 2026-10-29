@@ -96,6 +96,30 @@ describe('pruneHistoricalToolOutputs', () => {
     expect(() => JSON.parse(result[1].content)).not.toThrow();
   });
 
+  it('preserves historical tool outputs completely intact under default options when within budget', () => {
+    const historicalOutput = JSON.stringify({ file: 'src/index.ts', content: 'export const x = 1;'.repeat(100) });
+    const items = [
+      { role: 'user', content: 'read the files' },
+      { type: 'function_call', callId: 'c1', name: 'file_read' },
+      { type: 'function_call_output', callId: 'c1', output: historicalOutput },
+      { role: 'assistant', content: 'read next' },
+      { type: 'function_call', callId: 'c2', name: 'file_read' },
+      { type: 'function_call_output', callId: 'c2', output: historicalOutput },
+      { role: 'assistant', content: 'turn 3' },
+      { type: 'function_call', callId: 'c3', name: 'file_read' },
+      { type: 'function_call_output', callId: 'c3', output: historicalOutput },
+      { role: 'assistant', content: 'turn 4' },
+      { type: 'function_call', callId: 'c4', name: 'file_read' },
+      { type: 'function_call_output', callId: 'c4', output: historicalOutput },
+    ];
+    // Under default options, nothing should be truncated after turn 3
+    const result = pruneHistoricalToolOutputs(items);
+    expect(result[2].output).toBe(historicalOutput);
+    expect(result[5].output).toBe(historicalOutput);
+    expect(result[8].output).toBe(historicalOutput);
+    expect(result[11].output).toBe(historicalOutput);
+  });
+
   it('pruneToolOutput strictly preserves valid JSON across all input types', () => {
     // 1. Valid JSON object
     const objJson = JSON.stringify({ stdout: 'hello'.repeat(1000), exitCode: 0 });

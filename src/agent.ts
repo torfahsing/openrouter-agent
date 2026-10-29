@@ -20,14 +20,14 @@ if (typeof originalMakeFollowupRequest === 'function') {
     if (Array.isArray(toolResults)) {
       for (const res of toolResults) {
         if (res && res.type === 'function_call_output' && typeof res.output === 'string') {
-          if (res.output.length > 40_000) {
-            res.output = pruneToolOutput(res.output, 40_000, false);
+          if (res.output.length > 50_000) {
+            res.output = pruneToolOutput(res.output, 50_000, false);
           }
         }
       }
     }
 
-    // 2. Prune historical tool outputs from earlier turns
+    // 2. Safeguard multi-turn input (leaves normal runs untouched; only emergency prunes if payload exceeds 4 MB)
     if (Array.isArray(this.resolvedRequest?.input)) {
       this.resolvedRequest.input = pruneHistoricalToolOutputs(this.resolvedRequest.input);
     }
@@ -372,6 +372,7 @@ export async function runAgent(
     input: activeInput as string | Item[],
     tools: filteredTools as any,
     stopWhen: [stepCountIs(config.maxSteps), maxCost(config.maxCost)],
+    allowFinalResponse: Boolean(config.outputSchema),
   };
 
   const origCallModel = client.callModel.bind(client);
@@ -448,6 +449,9 @@ export async function runAgent(
     const unexecuted = Array.from(callNames.entries()).filter(([callId]) => !executedCallIds.has(callId));
     if (unexecuted.length > 0) {
       const names = unexecuted.map(([_, name]) => name).join(', ');
+      if (!config.outputSchema) {
+        throw new Error(`Agent execution halted prematurely with unexecuted tool call(s): ${names}`);
+      }
       console.warn(`[agent] Run ended with unexecuted tool call(s): ${names}`);
     }
 
