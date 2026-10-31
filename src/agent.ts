@@ -222,6 +222,76 @@ export function normalizeUsage(raw: {
   return usage;
 }
 
+/**
+ * Bounded window (ms) for the best-effort `getUsage()` fetch on the
+ * abort/cancel path. Must stay well below the worker daemon's
+ * SIGTERM → 1.5 s → SIGKILL escalation so shutdown is never blocked.
+ */
+export const ABORT_USAGE_TIMEOUT_MS = 750;
+
+type RawUsage = {
+  inputTokens?: unknown;
+  outputTokens?: unknown;
+  totalTokens?: unknown;
+  cachedTokens?: unknown;
+  reasoningTokens?: unknown;
+  cost?: unknown;
+  costDetails?: DoneUsage['costDetails'];
+  [key: string]: unknown;
+} | null | undefined;
+
+function isFiniteNonNegative(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0;
+}
+
+/**
+ * Clamp raw usage numbers into an emit-safe `DoneUsage` for the abort path:
+ * NaN/Infinity/negative values are rejected and missing token counts default
+ * to 0; `cost` is kept only when the upstream reported a real numeric value.
+ * Returns null for nullish input or usage that carries nothing reportable
+ * (all zeros) — callers then exit without emitting a `done` event.
+ */
+export function sanitizeUsage(raw: RawUsage): DoneUsage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const usage: DoneUsage = {
+    inputTokens: isFiniteNonNegative(raw.inputTokens) ? raw.inputTokens : 0,
+    outputTokens: isFiniteNonNegative(raw.outputTokens) ? raw.outputTokens : 0,
+  };
+  if (isFiniteNonNegative(raw.totalTokens)) usage.totalTokens = raw.totalTokens;
+  if (isFiniteNonNegative(raw.cachedTokens)) usage.cachedTokens = raw.cachedTokens;
+  if (isFiniteNonNegative(raw.reasoningTokens)) usage.reasoningTokens = raw.reasoningTokens;
+  if (isFiniteNonNegative(raw.cost)) usage.cost = raw.cost;
+  if (raw.costDetails && typeof raw.costDetails === 'object') usage.costDetails = raw.costDetails;
+  const reportable = [usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cost]
+    .some((v) => typeof v === 'number' && v > 0);
+  return reportable ? usage : null;
+}
+
+/**
+ * Best-effort usage fetch for the abort/cancel path: races `result.getUsage()`
+ * against a bounded timeout and never throws — on expiry, rejection, or a
+ * nothing-usable result it resolves to null so shutdown is never blocked.
+ */
+export async function getUsageBestEffort(
+  result: { getUsage?: () => Promise<unknown> } | null | undefined,
+  timeoutMs: number = ABORT_USAGE_TIMEOUT_MS,
+): Promise<DoneUsage | null> {
+  if (!result || typeof result.getUsage !== 'function') return null;
+  let raw: unknown = null;
+  try {
+    raw = await Promise.race([
+      Promise.resolve(result.getUsage()).catch(() => null),
+      new Promise<null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), Math.max(0, timeoutMs));
+        timer.unref?.();
+      }),
+    ]);
+  } catch {
+    return null;
+  }
+  return sanitizeUsage(raw as RawUsage);
+}
+
 export type AgentEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; name: string; callId: string; args: Record<string, unknown> }
@@ -320,7 +390,7 @@ export function filterTools(allTools: typeof tools, allowedTools?: string[]) {
 export async function runAgent(
   config: AgentConfig,
   input: string | ChatMessage[],
-  options?: { onEvent?: (event: AgentEvent) => void; signal?: AbortSignal },
+  options?: { onEvent?: (event: AgentEvent) => void; signal?: AbortSignal; abortUsageTimeoutMs?: number },
 ) {
   const startedAt = Date.now();
   const client = new OpenRouter({ apiKey: config.apiKey });
@@ -446,6 +516,13 @@ export async function runAgent(
 
     await Promise.all([streamText(), streamToolsAndReasoning()]);
 
+    // Cancelled mid-run: skip the final-response round-trip entirely and fall
+    // through to the abort path in the catch below (best-effort partial usage,
+    // then exit — never block shutdown).
+    if (options?.signal?.aborted) {
+      throw new Error('Aborted');
+    }
+
     const unexecuted = Array.from(callNames.entries()).filter(([callId]) => !executedCallIds.has(callId));
     if (unexecuted.length > 0) {
       const names = unexecuted.map(([_, name]) => name).join(', ');
@@ -476,6 +553,25 @@ export async function runAgent(
     options?.onEvent?.({ type: 'done', usage: sessionUsage, durationMs });
     return { text, usage: sessionUsage, output: response.output, durationMs };
   } catch (err: any) {
+    if (options?.signal?.aborted) {
+      // Abort/cancel path: emit exactly ONE terminal `done` event carrying
+      // whatever partial usage the provider already billed for, through the
+      // same stdout-JSON channel the success path uses. `getUsage()` is raced
+      // against a bounded timeout and any expiry/throw/nothing-usable result
+      // resolves to "no usage" — the event is simply skipped and shutdown
+      // proceeds immediately. Never throw from this path beyond the sentinel.
+      const usage = await getUsageBestEffort(
+        result,
+        options?.abortUsageTimeoutMs ?? ABORT_USAGE_TIMEOUT_MS,
+      );
+      if (usage) {
+        options?.onEvent?.({ type: 'done', usage, durationMs: Date.now() - startedAt });
+      }
+      const abortError = new Error('Aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
+
     const formattedMessage = extractOpenRouterErrorMessage(err);
     const enrichedErr = new Error(formattedMessage);
     enrichedErr.name = err.name || 'OpenRouterError';
@@ -493,7 +589,7 @@ const MUTATING_TOOLS = new Set(['file_write', 'file_edit', 'shell', 'Bash']);
 export async function runAgentWithRetry(
   config: AgentConfig,
   input: string | ChatMessage[],
-  options?: { onEvent?: (event: AgentEvent) => void; signal?: AbortSignal; maxRetries?: number },
+  options?: { onEvent?: (event: AgentEvent) => void; signal?: AbortSignal; abortUsageTimeoutMs?: number; maxRetries?: number },
 ) {
   for (let attempt = 0, max = options?.maxRetries ?? 3; attempt <= max; attempt++) {
     let mutatingToolCallsMade = 0;

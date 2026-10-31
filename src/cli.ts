@@ -26,6 +26,21 @@ async function getStdinText(): Promise<string> {
   });
 }
 
+// Flush queued stdout writes (e.g. the terminal done event emitted on the
+// abort path) before exiting, with a bounded fallback in case stdout is
+// already closed and the write callback never fires.
+async function flushStdoutAndExit(code: number): Promise<never> {
+  await new Promise<void>((resolve) => {
+    const fallback = setTimeout(resolve, 250);
+    fallback.unref?.();
+    process.stdout.write('', () => {
+      clearTimeout(fallback);
+      resolve();
+    });
+  });
+  process.exit(code);
+}
+
 // Preprocess argv to normalize --allowedTools/--allowed-tools multi-values
 const originalArgv = process.argv.slice(2);
 const argv: string[] = [];
@@ -247,9 +262,18 @@ if (typeof values.session === 'string' && !values['no-session']) {
   saveMessage(sessionPath, { role: 'user', content: prompt });
 }
 
+// Cancel support: SIGTERM/SIGINT abort the in-flight run so the agent can emit
+// a best-effort terminal `done` event (with partial usage) on the stdout-JSON
+// channel before exiting — shutdown is never blocked beyond a bounded timeout.
+const abortController = new AbortController();
+const onAbortSignal = () => abortController.abort();
+process.on('SIGTERM', onAbortSignal);
+process.on('SIGINT', onAbortSignal);
+
 try {
   let hasEmittedText = false;
   const result = await runAgentWithRetry(config, inputPayload, {
+    signal: abortController.signal,
     onEvent: (event: AgentEvent) => {
       if (values.json) {
         process.stdout.write(JSON.stringify(event) + '\n');
@@ -333,6 +357,14 @@ try {
 
   process.exit(0);
 } catch (err: any) {
+  if (abortController.signal.aborted) {
+    // Cancelled: the agent's abort path already emitted the terminal `done`
+    // event (with whatever partial usage was retrievable) on the stdout-JSON
+    // channel. Flush stdout and exit without an error event. Exit code 130
+    // (not 143/SIGTERM) keeps the worker's "Agent killed (timeout)"
+    // classification intact for supervisor kills that are not user cancels.
+    await flushStdoutAndExit(130);
+  }
   const message = extractOpenRouterErrorMessage(err);
   const isQuiet = values?.quiet ?? (preMode === 'quiet');
   const isJson = values?.json ?? (preMode === 'json');
