@@ -126,6 +126,38 @@ if (typeof originalRetryCurrentRequest === 'function') {
   };
 }
 
+// Monkeypatch ModelResult.prototype.executeSingleToolCall to gracefully handle unknown/hallucinated tools.
+// Instead of returning null (which causes @openrouter/agent to pause into awaiting_client_tools and abort),
+// synthesize an informative error tool result so the model receives immediate feedback and can self-correct.
+const originalExecuteSingleToolCall = (ModelResult.prototype as any).executeSingleToolCall;
+if (typeof originalExecuteSingleToolCall === 'function') {
+  (ModelResult.prototype as any).executeSingleToolCall = async function (toolCall: any, turnContext: any) {
+    const res = await originalExecuteSingleToolCall.call(this, toolCall, turnContext);
+    if (res === null && toolCall && typeof toolCall.name === 'string') {
+      const toolExists = this.options?.tools?.some((t: any) => (t.function?.name ?? t.config?.type) === toolCall.name);
+      if (!toolExists) {
+        const availableTools = (this.options?.tools || [])
+          .map((t: any) => t.function?.name ?? t.config?.type)
+          .filter(Boolean);
+        const uniqueTools = Array.from(new Set(availableTools)).join(', ');
+        const errorMessage = `Tool "${toolCall.name}" does not exist. Available tools: ${uniqueTools}. Please use one of the available tools.`;
+        return {
+          type: 'parse_error',
+          toolCall,
+          errorMessage,
+          output: {
+            type: 'function_call_output',
+            id: `output_${toolCall.id}`,
+            callId: toolCall.id,
+            output: JSON.stringify({ error: errorMessage }),
+          },
+        };
+      }
+    }
+    return res;
+  };
+}
+
 // Monkeypatch ModelResult.prototype.pipeAndConsumeStream to provide detailed API error messages
 (ModelResult.prototype as any).pipeAndConsumeStream = async function (stream: any, turnNumber: number) {
   const broadcaster = (this as any).turnBroadcaster;
@@ -526,15 +558,17 @@ export async function runAgent(
     const unexecuted = Array.from(callNames.entries()).filter(([callId]) => !executedCallIds.has(callId));
     if (unexecuted.length > 0) {
       const names = unexecuted.map(([_, name]) => name).join(', ');
-      if (!config.outputSchema) {
-        throw new Error(`Agent execution halted prematurely with unexecuted tool call(s): ${names}`);
-      }
       console.warn(`[agent] Run ended with unexecuted tool call(s): ${names}`);
     }
 
-    const response = await result.getResponse();
+    let response: any;
+    try {
+      response = await result.getResponse();
+    } catch {
+      response = { outputText: accumulatedText || '' };
+    }
     const durationMs = Date.now() - startedAt;
-    const text = accumulatedText || (response.outputText ?? '');
+    const text = accumulatedText || (response?.outputText ?? '') || (unexecuted.length > 0 ? `Completed up to step limit with tool(s): ${Array.from(callNames.values()).join(', ')}` : '');
 
     // Aggregate usage across EVERY model call this run made (each tool-round
     // follow-up is billed separately and the final round alone omits them).

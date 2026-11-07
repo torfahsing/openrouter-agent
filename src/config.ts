@@ -42,7 +42,7 @@ const DEFAULTS: AgentConfig = {
     '- Prefer grep and glob tools over shell commands for file search.',
     '- When editing code, make minimal targeted changes consistent with the existing style.',
   ].join('\n'),
-  maxSteps: 60,
+  maxSteps: 100,
   maxCost: 1.0,
   sessionDir: '.sessions',
   sessionEnabled: true,
